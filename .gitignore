@@ -1,0 +1,35 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+secrets/
+credentials/
+config.local.*
+
+# ESP-IDF
+firmware/build/
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/dependencies.lock
+firmware/managed_components/
+
+# WeChat developer tools
+miniapp/project.private.config.json
+miniapp/config.js
+
+# Backend
+backend/.venv/
+backend/venv/
+backend/node_modules/
+backend/__pycache__/
+backend/*.db
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+*.log
+*.tmp
