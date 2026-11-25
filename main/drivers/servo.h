@@ -17,12 +17,14 @@ typedef struct {
     uint16_t max_pulse_us;
     float min_angle;
     float max_angle;
+    float initial_angle;
 } servo_config_t;
 
 typedef struct {
     servo_config_t config;
     bool initialized;
     float current_angle;
+    uint16_t current_pulse_us;
 } servo_t;
 
 esp_err_t servo_init(servo_t *servo, const servo_config_t *config);

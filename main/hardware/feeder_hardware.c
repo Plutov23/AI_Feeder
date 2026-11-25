@@ -38,6 +38,16 @@ static oled_ssd1306_t oled_display;
 
 #if FEEDER_ENABLE_SERVO
 static servo_t feeder_servo;
+#if FEEDER_SERVO_AUTO_TEST
+static const float servo_test_angles[] = {45.0f, 80.0f, 45.0f, 10.0f};
+#endif
+
+static void log_servo_target(void)
+{
+    ESP_LOGI(TAG, "SG90 GPIO%d target: %.0f deg, pulse=%u us",
+             FEEDER_SERVO_GPIO, feeder_servo.current_angle,
+             (unsigned)feeder_servo.current_pulse_us);
+}
 #endif
 
 static void snapshot_lock(void)
@@ -202,6 +212,11 @@ static void hardware_test_task(void *argument)
 {
     (void)argument;
     TickType_t last_report_tick = xTaskGetTickCount();
+#if FEEDER_ENABLE_SERVO && FEEDER_SERVO_AUTO_TEST
+    size_t next_servo_test_angle = 1;
+    const size_t servo_test_angle_count =
+        sizeof(servo_test_angles) / sizeof(servo_test_angles[0]);
+#endif
 #if FEEDER_ENABLE_IR_SENSOR
     bool infrared_status_reported = false;
     bool last_infrared_active = false;
@@ -241,11 +256,17 @@ static void hardware_test_task(void *argument)
             read_hardware_once();
 
 #if FEEDER_ENABLE_SERVO && FEEDER_SERVO_AUTO_TEST
-            static uint32_t report_count;
-            report_count++;
-            if (report_count % 5U == 0U) {
-                ESP_LOGI(TAG, "Running servo dispense test");
-                feeder_hardware_dispense_once();
+            if (feeder_servo.initialized) {
+                float angle = servo_test_angles[next_servo_test_angle];
+                esp_err_t result = servo_set_angle(&feeder_servo, angle);
+                if (result == ESP_OK) {
+                    log_servo_target();
+                    next_servo_test_angle =
+                        (next_servo_test_angle + 1) % servo_test_angle_count;
+                } else {
+                    ESP_LOGW(TAG, "Servo angle test failed: %s",
+                             esp_err_to_name(result));
+                }
             }
 #endif
         }
@@ -370,12 +391,16 @@ esp_err_t feeder_hardware_init(void)
         .min_pulse_us = FEEDER_SERVO_MIN_PULSE_US,
         .max_pulse_us = FEEDER_SERVO_MAX_PULSE_US,
         .min_angle = 0.0f,
-        .max_angle = 180.0f,
+        .max_angle = FEEDER_SERVO_MAX_ANGLE,
+#if FEEDER_SERVO_AUTO_TEST
+        .initial_angle = servo_test_angles[0],
+#else
+        .initial_angle = FEEDER_SERVO_CLOSED_ANGLE,
+#endif
     };
     esp_err_t servo_result = servo_init(&feeder_servo, &servo_config);
     if (servo_result == ESP_OK) {
-        servo_set_angle(&feeder_servo, FEEDER_SERVO_CLOSED_ANGLE);
-        ESP_LOGI(TAG, "Servo initialized at closed angle");
+        log_servo_target();
     } else {
         ESP_LOGE(
             TAG,

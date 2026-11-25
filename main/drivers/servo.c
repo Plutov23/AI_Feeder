@@ -21,7 +21,8 @@ esp_err_t servo_init(servo_t *servo, const servo_config_t *config)
 {
     if (servo == NULL || config == NULL ||
         config->min_pulse_us >= config->max_pulse_us ||
-        config->min_angle >= config->max_angle) {
+        config->min_angle >= config->max_angle ||
+        !isfinite(config->initial_angle)) {
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -56,8 +57,9 @@ esp_err_t servo_init(servo_t *servo, const servo_config_t *config)
 
     servo->config = *config;
     servo->initialized = true;
-    servo->current_angle = config->min_angle;
-    return servo_set_angle(servo, config->min_angle);
+    esp_err_t result = servo_set_angle(servo, config->initial_angle);
+    servo->initialized = result == ESP_OK;
+    return result;
 }
 
 esp_err_t servo_set_angle(servo_t *servo, float angle)
@@ -99,6 +101,7 @@ esp_err_t servo_set_angle(servo_t *servo, float angle)
     );
 
     servo->current_angle = angle;
+    servo->current_pulse_us = pulse_us;
     return ESP_OK;
 }
 
