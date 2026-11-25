@@ -7,6 +7,12 @@ credentials/
 config.local.*
 
 # ESP-IDF
+/build/
+/sdkconfig
+/sdkconfig.old
+/dependencies.lock
+/managed_components/
+/main/app_config.h
 firmware/build/
 firmware/sdkconfig
 firmware/sdkconfig.old

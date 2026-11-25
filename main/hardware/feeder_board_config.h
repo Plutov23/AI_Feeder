@@ -1,0 +1,64 @@
+#ifndef FEEDER_BOARD_CONFIG_H
+#define FEEDER_BOARD_CONFIG_H
+
+#include "driver/gpio.h"
+#include "driver/i2c.h"
+#include "driver/ledc.h"
+
+/*
+ * Hardware switches are disabled until the corresponding module is connected.
+ * Enable one module at a time while bringing up the board.
+ */
+#define FEEDER_ENABLE_HX711 0
+#define FEEDER_ENABLE_DS1302 0
+#define FEEDER_ENABLE_IR_SENSOR 1
+#define FEEDER_ENABLE_OLED 0
+#define FEEDER_ENABLE_SERVO 0
+
+#define FEEDER_ENABLE_HARDWARE_TEST_TASK 1
+#define FEEDER_SERVO_AUTO_TEST 0
+
+#define FEEDER_ANY_MODULE_ENABLED \
+    (FEEDER_ENABLE_HX711 || FEEDER_ENABLE_DS1302 || \
+     FEEDER_ENABLE_IR_SENSOR || FEEDER_ENABLE_OLED || \
+     FEEDER_ENABLE_SERVO)
+
+/* HX711: provisional pins and calibration values. */
+#define FEEDER_HX711_DOUT_GPIO GPIO_NUM_4
+#define FEEDER_HX711_SCK_GPIO GPIO_NUM_5
+#define FEEDER_HX711_TIMEOUT_MS 100
+#define FEEDER_HX711_SAMPLE_COUNT 10
+#define FEEDER_HX711_SCALE 420.0f
+
+/* DS1302 three-wire interface. */
+#define FEEDER_DS1302_CE_GPIO GPIO_NUM_10
+#define FEEDER_DS1302_SCLK_GPIO GPIO_NUM_11
+#define FEEDER_DS1302_IO_GPIO GPIO_NUM_12
+
+/* Infrared sensor: common modules use an active-low digital output. */
+#define FEEDER_IR_GPIO GPIO_NUM_13
+#define FEEDER_IR_ACTIVE_LEVEL 0
+#define FEEDER_IR_DEBOUNCE_MS 80
+
+/* SSD1306 OLED, 128x64, I2C address 0x3C. */
+#define FEEDER_OLED_I2C_PORT I2C_NUM_0
+#define FEEDER_OLED_SDA_GPIO GPIO_NUM_8
+#define FEEDER_OLED_SCL_GPIO GPIO_NUM_9
+#define FEEDER_OLED_I2C_FREQUENCY_HZ 400000
+#define FEEDER_OLED_I2C_ADDRESS 0x3C
+
+/* 50 Hz hobby servo. */
+#define FEEDER_SERVO_GPIO GPIO_NUM_14
+#define FEEDER_SERVO_LEDC_MODE LEDC_LOW_SPEED_MODE
+#define FEEDER_SERVO_LEDC_TIMER LEDC_TIMER_0
+#define FEEDER_SERVO_LEDC_CHANNEL LEDC_CHANNEL_0
+#define FEEDER_SERVO_MIN_PULSE_US 500
+#define FEEDER_SERVO_MAX_PULSE_US 2500
+#define FEEDER_SERVO_CLOSED_ANGLE 0.0f
+#define FEEDER_SERVO_OPEN_ANGLE 90.0f
+#define FEEDER_SERVO_HOLD_MS 1000
+
+#define FEEDER_HARDWARE_POLL_MS 20
+#define FEEDER_HARDWARE_REPORT_MS 1000
+
+#endif

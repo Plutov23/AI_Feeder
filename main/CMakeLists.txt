@@ -1,0 +1,25 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "drivers/hx711.c"
+        "drivers/ds1302.c"
+        "drivers/ir_sensor.c"
+        "drivers/oled_ssd1306.c"
+        "drivers/servo.c"
+        "hardware/feeder_hardware.c"
+    INCLUDE_DIRS
+        "."
+        "drivers"
+        "hardware"
+    REQUIRES
+        driver
+        esp_timer
+        mqtt
+        esp_wifi
+        esp_event
+        esp_netif
+        nvs_flash
+        esp_http_client
+        json
+        mbedtls
+)

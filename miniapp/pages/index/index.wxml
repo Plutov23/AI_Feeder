@@ -1,0 +1,139 @@
+<scroll-view scroll-y class="page-scroll">
+  <view class="page-shell">
+    <view class="topbar safe-top">
+      <view class="brand-block">
+        <view class="brand-code">AF / 01</view>
+        <view class="product-name">AI 智能喂食器</view>
+      </view>
+
+      <view class="connection-state {{deviceOnline ? 'is-online' : ''}}">
+        <view class="state-dot"></view>
+        <text>{{statusText}}</text>
+      </view>
+    </view>
+
+    <view class="workspace">
+      <view wx:if="{{activeTab === 'data'}}" class="page-panel">
+        <view class="panel-heading">
+          <view>
+            <view class="section-label">DEVICE DATA</view>
+            <view class="section-title">设备数据</view>
+          </view>
+          <view class="update-time">
+            <text class="update-label">更新时间</text>
+            <text class="update-value">{{lastUpdated}}</text>
+          </view>
+        </view>
+
+        <view class="data-list">
+          <view class="data-row">
+            <view class="data-index">01</view>
+            <view class="data-copy">
+              <view class="data-label">余粮变化趋势</view>
+              <view class="data-note">HX711 重量变化</view>
+            </view>
+            <view class="data-value">{{foodTrend}}</view>
+          </view>
+
+          <view class="data-row">
+            <view class="data-index">02</view>
+            <view class="data-copy">
+              <view class="data-label">每日进食次数</view>
+              <view class="data-note">红外触发计数</view>
+            </view>
+            <view class="data-value data-number">{{dailyEatingCount}}<text wx:if="{{dailyEatingCount !== '--'}}" class="data-unit"> 次</text></view>
+          </view>
+
+          <view class="data-row">
+            <view class="data-index">03</view>
+            <view class="data-copy">
+              <view class="data-label">最近进食时间</view>
+              <view class="data-note">DS1302 时间记录</view>
+            </view>
+            <view class="data-value data-number">{{lastEatingTime}}</view>
+          </view>
+        </view>
+
+        <view class="data-hint {{dataReady ? 'is-ready' : ''}}">
+          <view class="hint-dot"></view>
+          <text>{{dataReady ? '三项数据已接入 OneNET' : '等待三项物模型数据接入'}}</text>
+        </view>
+      </view>
+
+      <view wx:else class="page-panel analysis-panel">
+        <view class="panel-heading">
+          <view>
+            <view class="section-label">AI ANALYSIS</view>
+            <view class="section-title">AI 喂养分析</view>
+          </view>
+          <view class="update-time">
+            <text class="update-label">更新时间</text>
+            <text class="update-value">{{lastUpdated}}</text>
+          </view>
+        </view>
+
+        <view class="analysis-inputs">
+          <view class="input-item">
+            <text class="input-label">余粮趋势</text>
+            <text class="input-value">{{foodTrend}}</text>
+          </view>
+          <view class="input-item">
+            <text class="input-label">今日进食</text>
+            <text class="input-value">{{dailyEatingCount}}{{dailyEatingCount !== '--' ? ' 次' : ''}}</text>
+          </view>
+          <view class="input-item">
+            <text class="input-label">最近进食</text>
+            <text class="input-value">{{lastEatingTime}}</text>
+          </view>
+        </view>
+
+        <view class="analysis-body {{isAnalyzing ? 'is-loading' : ''}}">
+          <view class="analysis-state">
+            <view class="state-line"></view>
+            <text>{{isAnalyzing ? 'DeepSeek 分析中' : '最新分析结果'}}</text>
+          </view>
+          <text class="analysis-text">{{aiAnalysis}}</text>
+        </view>
+
+        <view class="analysis-footer">
+          <view class="source-info">
+            <view class="source-label">分析数据</view>
+            <view class="source-value">余粮趋势 · 进食次数 · 最近进食时间</view>
+          </view>
+
+          <button
+            class="analyze-button"
+            bindtap="analyzeWithDeepSeek"
+            loading="{{isAnalyzing}}"
+            disabled="{{isAnalyzing}}"
+            aria-label="重新进行AI分析"
+          >{{isAnalyzing ? '分析中' : '开始分析'}}</button>
+        </view>
+      </view>
+    </view>
+
+  </view>
+</scroll-view>
+
+<view class="bottom-nav safe-bottom">
+  <view
+    class="nav-item {{activeTab === 'data' ? 'is-active' : ''}}"
+    data-tab="data"
+    bindtap="switchTab"
+    role="button"
+    aria-label="查看设备数据"
+  >
+    <text class="nav-code">01</text>
+    <text>设备数据</text>
+  </view>
+  <view
+    class="nav-item {{activeTab === 'ai' ? 'is-active' : ''}}"
+    data-tab="ai"
+    bindtap="switchTab"
+    role="button"
+    aria-label="查看AI分析"
+  >
+    <text class="nav-code">02</text>
+    <text>AI 分析</text>
+  </view>
+</view>

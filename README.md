@@ -2,7 +2,22 @@
 
 基于 ESP32-S3、微信小程序和大模型数据分析的智能宠物喂食器毕业设计。
 
-> 当前仓库处于需求与架构规划阶段，尚未开始功能代码开发。
+## 红外实测存档
+
+本版本保留 ESP32-S3 固件和微信小程序源码。红外模块接 `GPIO13`，默认低电平有效。开机及检测状态切换时，串口以 115200 波特率显示「有」或「无」。该功能已完成实物测试。当前硬件方案无 OLED。
+
+固件使用 ESP-IDF 5.3.1。在终端执行：
+
+```bash
+cp main/app_config.example.h main/app_config.h
+idf.py set-target esp32s3
+idf.py build
+idf.py -p COM9 flash monitor
+```
+
+红外单项测试可使用配置模板。测试联网和 AI 时，请在本地填写 Wi-Fi、OneNET 和 DeepSeek 参数。小程序导入微信开发者工具前，将 `miniapp/config.example.js` 复制为 `miniapp/config.js`；使用自有 AppID 和本地 OneNET 参数联调。
+
+以下章节保留早期规划，硬件和功能范围以本节及实际固件为准。
 
 ## 项目目标
 
