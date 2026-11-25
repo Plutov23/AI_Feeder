@@ -11,6 +11,8 @@
 #define DS1302_REG_DAY 0x8A
 #define DS1302_REG_YEAR 0x8C
 #define DS1302_REG_WRITE_PROTECT 0x8E
+#define DS1302_REG_CLOCK_BURST 0xBE
+#define DS1302_EDGE_DELAY_US 4
 
 static uint8_t decimal_to_bcd(uint8_t value)
 {
@@ -32,37 +34,38 @@ static void ds1302_set_io_input(ds1302_t *device)
     gpio_set_direction(device->config.io_gpio, GPIO_MODE_INPUT);
 }
 
-static void ds1302_write_byte(ds1302_t *device, uint8_t value)
+static void ds1302_write_byte(ds1302_t *device, uint8_t value, bool release_io)
 {
     ds1302_set_io_output(device);
 
     for (uint8_t bit = 0; bit < 8; bit++) {
         gpio_set_level(device->config.sclk_gpio, 0);
         gpio_set_level(device->config.io_gpio, (value >> bit) & 0x01U);
-        esp_rom_delay_us(1);
+        esp_rom_delay_us(DS1302_EDGE_DELAY_US);
         gpio_set_level(device->config.sclk_gpio, 1);
-        esp_rom_delay_us(1);
+        esp_rom_delay_us(DS1302_EDGE_DELAY_US);
+    }
+    /* The RTC drives the first read bit on this falling edge. */
+    if (release_io) {
+        ds1302_set_io_input(device);
     }
     gpio_set_level(device->config.sclk_gpio, 0);
+    esp_rom_delay_us(DS1302_EDGE_DELAY_US);
 }
 
 static uint8_t ds1302_read_byte(ds1302_t *device)
 {
     uint8_t value = 0;
-    ds1302_set_io_input(device);
-
     for (uint8_t bit = 0; bit < 8; bit++) {
         if (gpio_get_level(device->config.io_gpio) != 0) {
             value |= (uint8_t)(1U << bit);
         }
         gpio_set_level(device->config.sclk_gpio, 1);
-        esp_rom_delay_us(1);
+        esp_rom_delay_us(DS1302_EDGE_DELAY_US);
         gpio_set_level(device->config.sclk_gpio, 0);
-        esp_rom_delay_us(1);
+        esp_rom_delay_us(DS1302_EDGE_DELAY_US);
     }
 
-    ds1302_set_io_output(device);
-    gpio_set_level(device->config.io_gpio, 0);
     return value;
 }
 
@@ -73,25 +76,23 @@ static void ds1302_write_register(
 )
 {
     gpio_set_level(device->config.ce_gpio, 1);
-    esp_rom_delay_us(1);
-    ds1302_write_byte(device, register_address & 0xFEU);
-    ds1302_write_byte(device, value);
+    esp_rom_delay_us(DS1302_EDGE_DELAY_US);
+    ds1302_write_byte(device, register_address & 0xFEU, false);
+    ds1302_write_byte(device, value, false);
     gpio_set_level(device->config.ce_gpio, 0);
-    esp_rom_delay_us(1);
+    esp_rom_delay_us(DS1302_EDGE_DELAY_US);
 }
 
-static uint8_t ds1302_read_register(
-    ds1302_t *device,
-    uint8_t register_address
-)
+static void ds1302_read_clock(ds1302_t *device, uint8_t registers[7])
 {
     gpio_set_level(device->config.ce_gpio, 1);
-    esp_rom_delay_us(1);
-    ds1302_write_byte(device, register_address | 0x01U);
-    uint8_t value = ds1302_read_byte(device);
+    esp_rom_delay_us(DS1302_EDGE_DELAY_US);
+    ds1302_write_byte(device, DS1302_REG_CLOCK_BURST | 0x01U, true);
+    for (uint8_t index = 0; index < 7; index++) {
+        registers[index] = ds1302_read_byte(device);
+    }
     gpio_set_level(device->config.ce_gpio, 0);
-    esp_rom_delay_us(1);
-    return value;
+    esp_rom_delay_us(DS1302_EDGE_DELAY_US);
 }
 
 static uint8_t ds1302_decode_hour(uint8_t value)
@@ -154,26 +155,19 @@ esp_err_t ds1302_get_time(ds1302_t *device, ds1302_datetime_t *time)
         return ESP_ERR_INVALID_STATE;
     }
 
-    uint8_t seconds = ds1302_read_register(device, DS1302_REG_SECONDS);
-    if ((seconds & 0x80U) != 0U) {
+    uint8_t registers[7];
+    ds1302_read_clock(device, registers);
+    if ((registers[0] & 0x80U) != 0U) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    time->second = bcd_to_decimal(seconds & 0x7FU);
-    time->minute = bcd_to_decimal(
-        ds1302_read_register(device, DS1302_REG_MINUTES) & 0x7FU
-    );
-    time->hour = ds1302_decode_hour(
-        ds1302_read_register(device, DS1302_REG_HOURS)
-    );
-    time->day = bcd_to_decimal(
-        ds1302_read_register(device, DS1302_REG_DATE) & 0x3FU
-    );
-    time->month = bcd_to_decimal(
-        ds1302_read_register(device, DS1302_REG_MONTH) & 0x1FU
-    );
-    time->day_of_week = ds1302_read_register(device, DS1302_REG_DAY) & 0x07U;
-    time->year = bcd_to_decimal(ds1302_read_register(device, DS1302_REG_YEAR));
+    time->second = bcd_to_decimal(registers[0] & 0x7FU);
+    time->minute = bcd_to_decimal(registers[1] & 0x7FU);
+    time->hour = ds1302_decode_hour(registers[2]);
+    time->day = bcd_to_decimal(registers[3] & 0x3FU);
+    time->month = bcd_to_decimal(registers[4] & 0x1FU);
+    time->day_of_week = registers[5] & 0x07U;
+    time->year = bcd_to_decimal(registers[6]);
 
     return ds1302_time_is_valid(time) ? ESP_OK : ESP_ERR_INVALID_RESPONSE;
 }

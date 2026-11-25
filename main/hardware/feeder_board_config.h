@@ -10,7 +10,7 @@
  * Enable one module at a time while bringing up the board.
  */
 #define FEEDER_ENABLE_HX711 0
-#define FEEDER_ENABLE_DS1302 0
+#define FEEDER_ENABLE_DS1302 1
 #define FEEDER_ENABLE_IR_SENSOR 1
 #define FEEDER_ENABLE_OLED 0
 #define FEEDER_ENABLE_SERVO 0
@@ -34,6 +34,7 @@
 #define FEEDER_DS1302_CE_GPIO GPIO_NUM_10
 #define FEEDER_DS1302_SCLK_GPIO GPIO_NUM_11
 #define FEEDER_DS1302_IO_GPIO GPIO_NUM_12
+#define FEEDER_DS1302_SET_BUILD_TIME_ON_BOOT 1
 
 /* Infrared sensor: common modules use an active-low digital output. */
 #define FEEDER_IR_GPIO GPIO_NUM_13

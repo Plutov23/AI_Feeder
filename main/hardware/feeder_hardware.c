@@ -3,6 +3,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "feeder_board_config.h"
 #include "freertos/FreeRTOS.h"
@@ -52,6 +53,57 @@ static void snapshot_unlock(void)
         xSemaphoreGive(snapshot_mutex);
     }
 }
+
+#if FEEDER_ENABLE_DS1302 && FEEDER_DS1302_SET_BUILD_TIME_ON_BOOT
+static esp_err_t seed_ds1302_from_build_time(void)
+{
+    static const char *const months[] = {
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    };
+    char month_name[4];
+    int year;
+    struct tm build_time = { .tm_isdst = -1 };
+    if (sscanf(__DATE__ " " __TIME__, "%3s %d %d %d:%d:%d",
+               month_name, &build_time.tm_mday, &year, &build_time.tm_hour,
+               &build_time.tm_min, &build_time.tm_sec) != 6 ||
+        year < 2000 || year > 2099) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    while (build_time.tm_mon < 12 &&
+           strcmp(month_name, months[build_time.tm_mon]) != 0) {
+        build_time.tm_mon++;
+    }
+    build_time.tm_year = year - 1900;
+    if (build_time.tm_mon == 12 || mktime(&build_time) == (time_t)-1) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    const ds1302_datetime_t initial_time = {
+        .year = (uint8_t)(year - 2000),
+        .month = (uint8_t)(build_time.tm_mon + 1),
+        .day = (uint8_t)build_time.tm_mday,
+        .day_of_week = (uint8_t)(build_time.tm_wday + 1),
+        .hour = (uint8_t)build_time.tm_hour,
+        .minute = (uint8_t)build_time.tm_min,
+        .second = (uint8_t)build_time.tm_sec,
+    };
+    esp_err_t result = ds1302_set_time(&rtc_device, &initial_time);
+    if (result != ESP_OK) {
+        return result;
+    }
+
+    ds1302_datetime_t readback = {0};
+    result = ds1302_get_time(&rtc_device, &readback);
+    if (result != ESP_OK) {
+        return result;
+    }
+    return memcmp(&initial_time, &readback, sizeof(initial_time)) == 0
+        ? ESP_OK
+        : ESP_ERR_INVALID_RESPONSE;
+}
+#endif
 
 #if FEEDER_ENABLE_OLED
 static void update_oled(void)
@@ -137,7 +189,7 @@ static void read_hardware_once(void)
             time.second
         );
     } else {
-        ESP_LOGW(TAG, "DS1302 time is not set or invalid");
+        ESP_LOGW(TAG, "DS1302 read failed: %s", esp_err_to_name(rtc_result));
     }
 #endif
 
@@ -239,6 +291,15 @@ esp_err_t feeder_hardware_init(void)
         .io_gpio = FEEDER_DS1302_IO_GPIO,
     };
     esp_err_t ds1302_result = ds1302_init(&rtc_device, &ds1302_config);
+#if FEEDER_DS1302_SET_BUILD_TIME_ON_BOOT
+    if (ds1302_result == ESP_OK) {
+        ds1302_result = seed_ds1302_from_build_time();
+        if (ds1302_result == ESP_OK) {
+            ESP_LOGI(TAG, "DS1302 set to firmware build time: %s %s",
+                     __DATE__, __TIME__);
+        }
+    }
+#endif
     if (ds1302_result == ESP_OK) {
         ESP_LOGI(TAG, "DS1302 initialized");
     } else {
