@@ -1,3 +1,16 @@
+#include "feeder_board_config.h"
+#include "feeder_log.h"
+
+#if FEEDER_HX711_TEST_ONLY
+#include "feeder_hx711_test.h"
+
+void app_main(void)
+{
+    feeder_log_boot();
+    feeder_hx711_test_run();
+}
+
+#else
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,7 +21,6 @@
 #include "esp_crt_bundle.h"
 #include "esp_event.h"
 #include "esp_http_client.h"
-#include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_wifi.h"
 #include "feeder_hardware.h"
@@ -33,7 +45,6 @@ typedef struct {
     size_t capacity;
 } http_response_buffer_t;
 
-static const char *TAG = "AI_FEEDER";
 static EventGroupHandle_t wifi_event_group;
 static SemaphoreHandle_t ai_task_gate;
 static esp_mqtt_client_handle_t mqtt_client;
@@ -117,7 +128,7 @@ static void publish_ai_state(const char *reply, bool command_active)
     );
 
     if (!mqtt_connected || mqtt_client == NULL) {
-        ESP_LOGW(TAG, "MQTT offline, AI state saved locally");
+        FEEDER_LOGW(ONENET, "暂存 AI 状态 | MQTT 未连接");
         return;
     }
 
@@ -141,7 +152,7 @@ static void publish_ai_state(const char *reply, bool command_active)
         cJSON_Delete(params);
         cJSON_Delete(reply_property);
         cJSON_Delete(command_property);
-        ESP_LOGE(TAG, "Unable to allocate OneNET payload");
+        FEEDER_LOGE(ONENET, "上报 AI 状态失败 | 无法创建消息");
         return;
     }
 
@@ -166,9 +177,10 @@ static void publish_ai_state(const char *reply, bool command_active)
             0
         );
         if (result >= 0) {
-            ESP_LOGI(TAG, "AI state published to OneNET");
+            FEEDER_LOGI(ONENET, "上报 AI 状态 | msg_id=%d, 分析中=%d",
+                        result, command_active);
         } else {
-            ESP_LOGE(TAG, "Failed to publish AI state");
+            FEEDER_LOGE(ONENET, "上报 AI 状态失败 | MQTT 错误=%d", result);
         }
         free(payload);
     }
@@ -309,7 +321,7 @@ static esp_err_t call_deepseek(char *reply, size_t reply_size)
         strlen(request_body)
     );
 
-    ESP_LOGI(TAG, "Calling DeepSeek...");
+    FEEDER_LOGI(DEEPSEEK, "发送分析请求");
     esp_err_t result = esp_http_client_perform(client);
     int status_code = esp_http_client_get_status_code(client);
 
@@ -344,7 +356,7 @@ static esp_err_t call_deepseek(char *reply, size_t reply_size)
             result = ESP_FAIL;
         } else {
             copy_utf8_truncated(reply, reply_size, content->valuestring);
-            ESP_LOGI(TAG, "DeepSeek analysis received");
+            FEEDER_LOGI(DEEPSEEK, "收到分析结果");
         }
         cJSON_Delete(root);
     }
@@ -366,11 +378,12 @@ static void deepseek_task(void *argument)
             break;
         }
 
-        ESP_LOGW(
-            TAG,
-            "DeepSeek request failed, attempt %d/%d",
+        FEEDER_LOGW(
+            DEEPSEEK,
+            "分析请求失败 | 第 %d/%d 次, %s",
             attempt,
-            DEEPSEEK_MAX_RETRIES
+            DEEPSEEK_MAX_RETRIES,
+            esp_err_to_name(result)
         );
         if (attempt < DEEPSEEK_MAX_RETRIES) {
             vTaskDelay(pdMS_TO_TICKS(DEEPSEEK_RETRY_DELAY_MS));
@@ -389,7 +402,7 @@ static void handle_property_set(
 {
     cJSON *root = cJSON_ParseWithLength(data, data_length);
     if (root == NULL) {
-        ESP_LOGE(TAG, "Invalid OneNET property-set JSON");
+        FEEDER_LOGE(ONENET, "解析属性指令失败 | JSON 无效");
         return;
     }
 
@@ -422,7 +435,7 @@ static void handle_property_set(
     }
 
     if (xSemaphoreTake(ai_task_gate, 0) != pdTRUE) {
-        ESP_LOGW(TAG, "AI analysis is already running");
+        FEEDER_LOGW(DEEPSEEK, "分析任务忙 | 已有请求正在执行");
         publish_property_set_reply(request_id, 0, "already running");
         cJSON_Delete(root);
         return;
@@ -457,6 +470,7 @@ static void wifi_event_handler(
 )
 {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        FEEDER_LOGI(WIFI, "开始连接");
         esp_wifi_connect();
         return;
     }
@@ -465,9 +479,9 @@ static void wifi_event_handler(
         event_id == WIFI_EVENT_STA_DISCONNECTED) {
         if (wifi_retry_count < WIFI_MAXIMUM_RETRY) {
             wifi_retry_count++;
-            ESP_LOGW(
-                TAG,
-                "Wi-Fi disconnected, retry %d/%d",
+            FEEDER_LOGW(
+                WIFI,
+                "连接断开 | 正在重试 %d/%d",
                 wifi_retry_count,
                 WIFI_MAXIMUM_RETRY
             );
@@ -481,9 +495,9 @@ static void wifi_event_handler(
     if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         const ip_event_got_ip_t *event = event_data;
         wifi_retry_count = 0;
-        ESP_LOGI(
-            TAG,
-            "Wi-Fi connected, IP: " IPSTR,
+        FEEDER_LOGI(
+            WIFI,
+            "连接成功 | IP=" IPSTR,
             IP2STR(&event->ip_info.ip)
         );
         xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
@@ -542,7 +556,7 @@ static bool wifi_connect(void)
         return true;
     }
 
-    ESP_LOGE(TAG, "Unable to connect to Wi-Fi");
+    FEEDER_LOGE(WIFI, "连接失败 | 已达到重试上限");
     return false;
 }
 
@@ -558,7 +572,7 @@ static void mqtt_event_handler(
     switch ((esp_mqtt_event_id_t)event_id) {
         case MQTT_EVENT_CONNECTED: {
             mqtt_connected = true;
-            ESP_LOGI(TAG, "Connected to OneNET");
+            FEEDER_LOGI(ONENET, "MQTT 已连接");
 
             char post_reply_topic[208];
             char property_set_topic[208];
@@ -593,7 +607,7 @@ static void mqtt_event_handler(
 
         case MQTT_EVENT_DISCONNECTED:
             mqtt_connected = false;
-            ESP_LOGW(TAG, "Disconnected from OneNET");
+            FEEDER_LOGW(ONENET, "MQTT 已断开");
             break;
 
         case MQTT_EVENT_DATA: {
@@ -607,12 +621,12 @@ static void mqtt_event_handler(
             );
 
             if (topic_equals(event, property_set_topic)) {
-                ESP_LOGI(TAG, "OneNET property command received");
+                FEEDER_LOGI(ONENET, "收到属性设置指令");
                 handle_property_set(event->data, event->data_len);
             } else {
-                ESP_LOGI(
-                    TAG,
-                    "OneNET message topic=%.*s data=%.*s",
+                FEEDER_LOGI(
+                    ONENET,
+                    "收到 MQTT 消息 | topic=%.*s, data=%.*s",
                     event->topic_len,
                     event->topic,
                     event->data_len,
@@ -623,7 +637,7 @@ static void mqtt_event_handler(
         }
 
         case MQTT_EVENT_ERROR:
-            ESP_LOGE(TAG, "MQTT event error");
+            FEEDER_LOGE(ONENET, "MQTT 连接或传输错误");
             break;
 
         default:
@@ -656,6 +670,7 @@ static void mqtt_start(void)
 
 void app_main(void)
 {
+    feeder_log_boot();
     esp_err_t nvs_result = nvs_flash_init();
     if (nvs_result == ESP_ERR_NVS_NO_FREE_PAGES ||
         nvs_result == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -667,25 +682,25 @@ void app_main(void)
 
     esp_err_t hardware_result = feeder_hardware_init();
     if (hardware_result != ESP_OK) {
-        ESP_LOGW(
-            TAG,
-            "Hardware framework initialized with errors: %s",
+        FEEDER_LOGW(
+            HW,
+            "部分外设初始化失败 | %s",
             esp_err_to_name(hardware_result)
         );
     }
     hardware_result = feeder_hardware_start_test_task();
     if (hardware_result != ESP_OK &&
         hardware_result != ESP_ERR_NOT_SUPPORTED) {
-        ESP_LOGW(
-            TAG,
-            "Hardware test task not started: %s",
+        FEEDER_LOGW(
+            HW,
+            "调试任务启动失败 | %s",
             esp_err_to_name(hardware_result)
         );
     }
 
     ai_task_gate = xSemaphoreCreateBinary();
     if (ai_task_gate == NULL) {
-        ESP_LOGE(TAG, "Unable to create AI task gate");
+        FEEDER_LOGE(DEEPSEEK, "初始化失败 | 无法创建任务信号量");
         return;
     }
     xSemaphoreGive(ai_task_gate);
@@ -700,3 +715,4 @@ void app_main(void)
         vTaskDelay(pdMS_TO_TICKS(60000));
     }
 }
+#endif

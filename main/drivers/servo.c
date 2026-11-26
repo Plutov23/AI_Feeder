@@ -2,7 +2,7 @@
 
 #include <math.h>
 
-#include "esp_check.h"
+#include "feeder_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -33,10 +33,8 @@ esp_err_t servo_init(servo_t *servo, const servo_config_t *config)
         .freq_hz = SERVO_FREQUENCY_HZ,
         .clk_cfg = LEDC_AUTO_CLK,
     };
-    ESP_RETURN_ON_ERROR(
-        ledc_timer_config(&timer_config),
-        "SERVO",
-        "timer config"
+    FEEDER_RETURN_ON_ERROR(
+        SERVO, ledc_timer_config(&timer_config), "配置 PWM 定时器失败"
     );
 
     ledc_channel_config_t channel_config = {
@@ -49,10 +47,8 @@ esp_err_t servo_init(servo_t *servo, const servo_config_t *config)
         .hpoint = 0,
         .flags.output_invert = 0,
     };
-    ESP_RETURN_ON_ERROR(
-        ledc_channel_config(&channel_config),
-        "SERVO",
-        "channel config"
+    FEEDER_RETURN_ON_ERROR(
+        SERVO, ledc_channel_config(&channel_config), "配置 PWM 通道失败"
     );
 
     servo->config = *config;
@@ -82,22 +78,22 @@ esp_err_t servo_set_angle(servo_t *servo, float angle)
     );
     uint32_t duty = servo_pulse_to_duty(pulse_us);
 
-    ESP_RETURN_ON_ERROR(
+    FEEDER_RETURN_ON_ERROR(
+        SERVO,
         ledc_set_duty(
             servo->config.speed_mode,
             servo->config.channel,
             duty
         ),
-        "SERVO",
-        "set duty"
+        "写入 PWM 占空比失败"
     );
-    ESP_RETURN_ON_ERROR(
+    FEEDER_RETURN_ON_ERROR(
+        SERVO,
         ledc_update_duty(
             servo->config.speed_mode,
             servo->config.channel
         ),
-        "SERVO",
-        "update duty"
+        "更新 PWM 输出失败"
     );
 
     servo->current_angle = angle;
@@ -112,11 +108,14 @@ esp_err_t servo_dispense(
     uint32_t hold_ms
 )
 {
-    ESP_RETURN_ON_ERROR(
-        servo_set_angle(servo, open_angle),
-        "SERVO",
-        "open"
-    );
+    FEEDER_RETURN_ON_ERROR(SERVO, servo_set_angle(servo, open_angle),
+                           "发送开门指令失败");
+    FEEDER_LOGI(SERVO, "发送开门指令 | 目标=%.0f°, 脉宽=%u us",
+                servo->current_angle, (unsigned)servo->current_pulse_us);
     vTaskDelay(pdMS_TO_TICKS(hold_ms));
-    return servo_set_angle(servo, closed_angle);
+    FEEDER_RETURN_ON_ERROR(SERVO, servo_set_angle(servo, closed_angle),
+                           "发送关门指令失败");
+    FEEDER_LOGI(SERVO, "发送关门指令 | 目标=%.0f°, 脉宽=%u us",
+                servo->current_angle, (unsigned)servo->current_pulse_us);
+    return ESP_OK;
 }

@@ -1,12 +1,14 @@
 idf_component_register(
     SRCS
         "main.c"
+        "feeder_log.c"
         "drivers/hx711.c"
         "drivers/ds1302.c"
         "drivers/ir_sensor.c"
         "drivers/oled_ssd1306.c"
         "drivers/servo.c"
         "hardware/feeder_hardware.c"
+        "hardware/feeder_hx711_test.c"
     INCLUDE_DIRS
         "."
         "drivers"
@@ -14,6 +16,7 @@ idf_component_register(
     REQUIRES
         driver
         esp_timer
+        esp_system
         mqtt
         esp_wifi
         esp_event

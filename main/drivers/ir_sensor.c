@@ -1,6 +1,6 @@
 #include "ir_sensor.h"
 
-#include "esp_check.h"
+#include "feeder_log.h"
 #include "esp_timer.h"
 
 esp_err_t ir_sensor_init(
@@ -21,11 +21,8 @@ esp_err_t ir_sensor_init(
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE,
     };
-    ESP_RETURN_ON_ERROR(
-        gpio_config(&gpio_config_options),
-        "IR_SENSOR",
-        "GPIO config"
-    );
+    FEEDER_RETURN_ON_ERROR(IR, gpio_config(&gpio_config_options),
+                           "配置 GPIO 失败");
 
     bool active = gpio_get_level(config->gpio) == config->active_level;
     sensor->config = *config;

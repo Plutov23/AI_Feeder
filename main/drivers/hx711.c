@@ -2,7 +2,7 @@
 
 #include <limits.h>
 
-#include "esp_check.h"
+#include "feeder_log.h"
 #include "esp_rom_sys.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -19,7 +19,7 @@ static esp_err_t hx711_wait_ready(hx711_t *device)
         if (esp_timer_get_time() - start_time_us >= timeout_us) {
             return ESP_ERR_TIMEOUT;
         }
-        vTaskDelay(pdMS_TO_TICKS(1));
+        vTaskDelay(1);
     }
 
     return ESP_OK;
@@ -46,13 +46,10 @@ esp_err_t hx711_init(hx711_t *device, const hx711_config_t *config)
         .intr_type = GPIO_INTR_DISABLE,
     };
 
-    ESP_RETURN_ON_ERROR(gpio_config(&output_config), "HX711", "SCK GPIO");
-    ESP_RETURN_ON_ERROR(gpio_config(&input_config), "HX711", "DOUT GPIO");
-    ESP_RETURN_ON_ERROR(
-        gpio_set_level(config->sck_gpio, 0),
-        "HX711",
-        "SCK level"
-    );
+    FEEDER_RETURN_ON_ERROR(HX711, gpio_config(&output_config), "配置 SCK 失败");
+    FEEDER_RETURN_ON_ERROR(HX711, gpio_config(&input_config), "配置 DOUT 失败");
+    FEEDER_RETURN_ON_ERROR(HX711, gpio_set_level(config->sck_gpio, 0),
+                           "设置 SCK 电平失败");
 
     device->config = *config;
     device->offset = 0;
@@ -66,7 +63,7 @@ esp_err_t hx711_read_raw(hx711_t *device, int32_t *raw_value)
         return ESP_ERR_INVALID_STATE;
     }
 
-    ESP_RETURN_ON_ERROR(hx711_wait_ready(device), "HX711", "not ready");
+    FEEDER_RETURN_ON_ERROR(HX711, hx711_wait_ready(device), "等待 DOUT 就绪失败");
 
     uint32_t value = 0;
 
@@ -108,11 +105,8 @@ esp_err_t hx711_read_average(
     int64_t sum = 0;
     for (uint8_t sample = 0; sample < sample_count; sample++) {
         int32_t raw_value = 0;
-        ESP_RETURN_ON_ERROR(
-            hx711_read_raw(device, &raw_value),
-            "HX711",
-            "read sample"
-        );
+        FEEDER_RETURN_ON_ERROR(HX711, hx711_read_raw(device, &raw_value),
+                               "读取样本失败");
         sum += raw_value;
     }
 
@@ -128,11 +122,8 @@ esp_err_t hx711_read_average(
 esp_err_t hx711_tare(hx711_t *device, uint8_t sample_count)
 {
     int32_t offset = 0;
-    ESP_RETURN_ON_ERROR(
-        hx711_read_average(device, sample_count, &offset),
-        "HX711",
-        "tare"
-    );
+    FEEDER_RETURN_ON_ERROR(HX711, hx711_read_average(device, sample_count, &offset),
+                           "读取去皮基准失败");
     device->offset = offset;
     return ESP_OK;
 }
@@ -145,11 +136,8 @@ esp_err_t hx711_read_weight_g(hx711_t *device, float *weight_g)
     }
 
     int32_t raw_value = 0;
-    ESP_RETURN_ON_ERROR(
-        hx711_read_raw(device, &raw_value),
-        "HX711",
-        "weight"
-    );
+    FEEDER_RETURN_ON_ERROR(HX711, hx711_read_raw(device, &raw_value),
+                           "读取重量原始值失败");
 
     *weight_g = (raw_value - device->offset) / device->config.scale;
     return ESP_OK;

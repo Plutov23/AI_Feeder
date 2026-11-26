@@ -1,6 +1,6 @@
 #include "ds1302.h"
 
-#include "esp_check.h"
+#include "feeder_log.h"
 #include "esp_rom_sys.h"
 
 #define DS1302_REG_SECONDS 0x80
@@ -125,11 +125,7 @@ esp_err_t ds1302_init(ds1302_t *device, const ds1302_config_t *config)
         .intr_type = GPIO_INTR_DISABLE,
     };
 
-    ESP_RETURN_ON_ERROR(
-        gpio_config(&output_config),
-        "DS1302",
-        "GPIO config"
-    );
+    FEEDER_RETURN_ON_ERROR(DS1302, gpio_config(&output_config), "配置 GPIO 失败");
 
     device->config = *config;
     device->initialized = true;

@@ -3,7 +3,7 @@
 #include <ctype.h>
 #include <string.h>
 
-#include "esp_check.h"
+#include "feeder_log.h"
 #include "freertos/FreeRTOS.h"
 
 #define OLED_CONTROL_COMMAND 0x00
@@ -141,10 +141,8 @@ esp_err_t oled_ssd1306_init(
         .master.clk_speed = config->frequency_hz,
         .clk_flags = 0,
     };
-    ESP_RETURN_ON_ERROR(
-        i2c_param_config(config->i2c_port, &i2c_config),
-        "OLED",
-        "I2C config"
+    FEEDER_RETURN_ON_ERROR(
+        OLED, i2c_param_config(config->i2c_port, &i2c_config), "配置 I2C 失败"
     );
 
     esp_err_t install_result = i2c_driver_install(
@@ -166,14 +164,14 @@ esp_err_t oled_ssd1306_init(
         0xA1, 0xC8, 0xDA, 0x12, 0x81, 0xCF, 0xD9, 0xF1,
         0xDB, 0x30, 0xA4, 0xA6, 0x8D, 0x14, 0xAF,
     };
-    ESP_RETURN_ON_ERROR(
+    FEEDER_RETURN_ON_ERROR(
+        OLED,
         oled_write_commands(
             display,
             init_commands,
             sizeof(init_commands)
         ),
-        "OLED",
-        "display init"
+        "发送初始化命令失败"
     );
     return oled_ssd1306_clear(display);
 }
@@ -186,20 +184,17 @@ esp_err_t oled_ssd1306_clear(oled_ssd1306_t *display)
 
     uint8_t blank_line[OLED_SSD1306_WIDTH] = {0};
     for (uint8_t page = 0; page < OLED_SSD1306_PAGE_COUNT; page++) {
-        ESP_RETURN_ON_ERROR(
-            oled_set_cursor(display, page, 0),
-            "OLED",
-            "cursor"
-        );
-        ESP_RETURN_ON_ERROR(
+        FEEDER_RETURN_ON_ERROR(OLED, oled_set_cursor(display, page, 0),
+                               "设置光标失败");
+        FEEDER_RETURN_ON_ERROR(
+            OLED,
             oled_write(
                 display,
                 OLED_CONTROL_DATA,
                 blank_line,
                 sizeof(blank_line)
             ),
-            "OLED",
-            "clear page"
+            "清屏失败"
         );
     }
     return ESP_OK;
@@ -217,11 +212,8 @@ esp_err_t oled_ssd1306_write_text(
         return ESP_ERR_INVALID_ARG;
     }
 
-    ESP_RETURN_ON_ERROR(
-        oled_set_cursor(display, page, column),
-        "OLED",
-        "cursor"
-    );
+    FEEDER_RETURN_ON_ERROR(OLED, oled_set_cursor(display, page, column),
+                           "设置光标失败");
 
     uint8_t output[OLED_SSD1306_WIDTH] = {0};
     size_t output_length = 0;

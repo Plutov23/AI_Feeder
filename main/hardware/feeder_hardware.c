@@ -6,6 +6,7 @@
 #include <time.h>
 
 #include "feeder_board_config.h"
+#include "feeder_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -13,9 +14,7 @@
 #include "ir_sensor.h"
 #include "oled_ssd1306.h"
 #include "servo.h"
-#include "esp_log.h"
 
-static const char *TAG = "FEEDER_HW";
 static feeder_hardware_snapshot_t current_snapshot;
 static SemaphoreHandle_t snapshot_mutex;
 static bool test_task_started;
@@ -42,11 +41,11 @@ static servo_t feeder_servo;
 static const float servo_test_angles[] = {45.0f, 80.0f, 45.0f, 10.0f};
 #endif
 
-static void log_servo_target(void)
+static void log_servo_target(const char *action)
 {
-    ESP_LOGI(TAG, "SG90 GPIO%d target: %.0f deg, pulse=%u us",
-             FEEDER_SERVO_GPIO, feeder_servo.current_angle,
-             (unsigned)feeder_servo.current_pulse_us);
+    FEEDER_LOGI(SERVO, "%s | SG90, GPIO%d, 目标角度=%.0f°, 脉宽=%u us",
+                action, FEEDER_SERVO_GPIO, feeder_servo.current_angle,
+                (unsigned)feeder_servo.current_pulse_us);
 }
 #endif
 
@@ -171,9 +170,9 @@ static void read_hardware_once(void)
     snapshot_unlock();
 
     if (weight_result == ESP_OK) {
-        ESP_LOGI(TAG, "HX711 weight: %.1f g", weight_g);
+        FEEDER_LOGI(HX711, "读取重量 | %.1f g", weight_g);
     } else {
-        ESP_LOGW(TAG, "HX711 read failed: %s", esp_err_to_name(weight_result));
+        FEEDER_LOGW(HX711, "读取重量失败 | %s", esp_err_to_name(weight_result));
     }
 #endif
 
@@ -188,9 +187,9 @@ static void read_hardware_once(void)
     snapshot_unlock();
 
     if (rtc_result == ESP_OK) {
-        ESP_LOGI(
-            TAG,
-            "DS1302 time: 20%02u-%02u-%02u %02u:%02u:%02u",
+        FEEDER_LOGI(
+            DS1302,
+            "读取时间 | 20%02u-%02u-%02u %02u:%02u:%02u",
             time.year,
             time.month,
             time.day,
@@ -199,7 +198,7 @@ static void read_hardware_once(void)
             time.second
         );
     } else {
-        ESP_LOGW(TAG, "DS1302 read failed: %s", esp_err_to_name(rtc_result));
+        FEEDER_LOGW(DS1302, "读取时间失败 | %s", esp_err_to_name(rtc_result));
     }
 #endif
 
@@ -235,13 +234,14 @@ static void hardware_test_task(void *argument)
 
             if (!infrared_status_reported ||
                 infrared_active != last_infrared_active) {
-                ESP_LOGI(
-                    TAG,
-                    "红外 GPIO%d: %s (level=%d)",
+                FEEDER_LOGI(
+                    IR,
+                    "检测状态变化 | GPIO%d, %s, 电平=%d, 累计=%" PRIu32,
                     FEEDER_IR_GPIO,
                     infrared_active ? "有" : "无",
                     infrared_active ? FEEDER_IR_ACTIVE_LEVEL
-                                    : !FEEDER_IR_ACTIVE_LEVEL
+                                    : !FEEDER_IR_ACTIVE_LEVEL,
+                    event_count
                 );
                 infrared_status_reported = true;
                 last_infrared_active = infrared_active;
@@ -260,12 +260,12 @@ static void hardware_test_task(void *argument)
                 float angle = servo_test_angles[next_servo_test_angle];
                 esp_err_t result = servo_set_angle(&feeder_servo, angle);
                 if (result == ESP_OK) {
-                    log_servo_target();
+                    log_servo_target("转角测试");
                     next_servo_test_angle =
                         (next_servo_test_angle + 1) % servo_test_angle_count;
                 } else {
-                    ESP_LOGW(TAG, "Servo angle test failed: %s",
-                             esp_err_to_name(result));
+                    FEEDER_LOGW(SERVO, "转角测试失败 | 目标=%.0f°, %s",
+                                angle, esp_err_to_name(result));
                 }
             }
 #endif
@@ -277,6 +277,9 @@ static void hardware_test_task(void *argument)
 
 esp_err_t feeder_hardware_init(void)
 {
+    FEEDER_LOGI(HW, "模块配置 | 舵机=%d, 红外=%d, DS1302=%d, HX711=%d, OLED=%d",
+                FEEDER_ENABLE_SERVO, FEEDER_ENABLE_IR_SENSOR,
+                FEEDER_ENABLE_DS1302, FEEDER_ENABLE_HX711, FEEDER_ENABLE_OLED);
     memset(&current_snapshot, 0, sizeof(current_snapshot));
     snapshot_mutex = xSemaphoreCreateMutex();
     if (snapshot_mutex == NULL) {
@@ -294,13 +297,10 @@ esp_err_t feeder_hardware_init(void)
     };
     esp_err_t hx711_result = hx711_init(&scale_device, &hx711_config);
     if (hx711_result == ESP_OK) {
-        ESP_LOGI(TAG, "HX711 initialized; tare is available on demand");
+        FEEDER_LOGI(HX711, "初始化完成 | DOUT=GPIO%d, SCK=GPIO%d",
+                    FEEDER_HX711_DOUT_GPIO, FEEDER_HX711_SCK_GPIO);
     } else {
-        ESP_LOGE(
-            TAG,
-            "HX711 init failed: %s",
-            esp_err_to_name(hx711_result)
-        );
+        FEEDER_LOGE(HX711, "初始化失败 | %s", esp_err_to_name(hx711_result));
         first_error = hx711_result;
     }
 #endif
@@ -316,19 +316,20 @@ esp_err_t feeder_hardware_init(void)
     if (ds1302_result == ESP_OK) {
         ds1302_result = seed_ds1302_from_build_time();
         if (ds1302_result == ESP_OK) {
-            ESP_LOGI(TAG, "DS1302 set to firmware build time: %s %s",
-                     __DATE__, __TIME__);
+            FEEDER_LOGI(DS1302, "开机校时并回读成功 | 编译时间=%s %s",
+                        __DATE__, __TIME__);
+        } else {
+            FEEDER_LOGE(DS1302, "开机校时或回读失败 | %s",
+                        esp_err_to_name(ds1302_result));
         }
     }
 #endif
     if (ds1302_result == ESP_OK) {
-        ESP_LOGI(TAG, "DS1302 initialized");
+        FEEDER_LOGI(DS1302, "初始化完成 | CE=GPIO%d, CLK=GPIO%d, DAT=GPIO%d",
+                    FEEDER_DS1302_CE_GPIO, FEEDER_DS1302_SCLK_GPIO,
+                    FEEDER_DS1302_IO_GPIO);
     } else {
-        ESP_LOGE(
-            TAG,
-            "DS1302 init failed: %s",
-            esp_err_to_name(ds1302_result)
-        );
+        FEEDER_LOGE(DS1302, "模块启动失败 | %s", esp_err_to_name(ds1302_result));
         if (first_error == ESP_OK) {
             first_error = ds1302_result;
         }
@@ -344,13 +345,11 @@ esp_err_t feeder_hardware_init(void)
     };
     esp_err_t ir_result = ir_sensor_init(&infrared_sensor, &ir_config);
     if (ir_result == ESP_OK) {
-        ESP_LOGI(TAG, "Infrared sensor initialized");
+        FEEDER_LOGI(IR, "初始化完成 | GPIO%d, 有效电平=%d, 防抖=%u ms",
+                    FEEDER_IR_GPIO, FEEDER_IR_ACTIVE_LEVEL,
+                    (unsigned)FEEDER_IR_DEBOUNCE_MS);
     } else {
-        ESP_LOGE(
-            TAG,
-            "Infrared init failed: %s",
-            esp_err_to_name(ir_result)
-        );
+        FEEDER_LOGE(IR, "初始化失败 | %s", esp_err_to_name(ir_result));
         if (first_error == ESP_OK) {
             first_error = ir_result;
         }
@@ -369,13 +368,10 @@ esp_err_t feeder_hardware_init(void)
     if (oled_result == ESP_OK) {
         oled_ssd1306_write_text(&oled_display, 0, 0, "AI FEEDER");
         oled_ssd1306_write_text(&oled_display, 2, 0, "OLED READY");
-        ESP_LOGI(TAG, "OLED initialized");
+        FEEDER_LOGI(OLED, "初始化完成 | I2C 地址=0x%02X",
+                    (unsigned)FEEDER_OLED_I2C_ADDRESS);
     } else {
-        ESP_LOGE(
-            TAG,
-            "OLED init failed: %s",
-            esp_err_to_name(oled_result)
-        );
+        FEEDER_LOGE(OLED, "初始化失败 | %s", esp_err_to_name(oled_result));
         if (first_error == ESP_OK) {
             first_error = oled_result;
         }
@@ -400,13 +396,9 @@ esp_err_t feeder_hardware_init(void)
     };
     esp_err_t servo_result = servo_init(&feeder_servo, &servo_config);
     if (servo_result == ESP_OK) {
-        log_servo_target();
+        log_servo_target("初始化完成");
     } else {
-        ESP_LOGE(
-            TAG,
-            "Servo init failed: %s",
-            esp_err_to_name(servo_result)
-        );
+        FEEDER_LOGE(SERVO, "初始化失败 | %s", esp_err_to_name(servo_result));
         if (first_error == ESP_OK) {
             first_error = servo_result;
         }
@@ -414,10 +406,7 @@ esp_err_t feeder_hardware_init(void)
 #endif
 
     if (!FEEDER_ANY_MODULE_ENABLED) {
-        ESP_LOGI(
-            TAG,
-            "Hardware modules are disabled in feeder_board_config.h"
-        );
+        FEEDER_LOGI(HW, "所有外设已停用");
     }
 
     return first_error;
@@ -447,6 +436,9 @@ esp_err_t feeder_hardware_start_test_task(void)
         return ESP_ERR_NO_MEM;
     }
     test_task_started = true;
+    FEEDER_LOGI(HW, "调试任务已启动 | 采样=%u ms, 报告=%u ms",
+                (unsigned)FEEDER_HARDWARE_POLL_MS,
+                (unsigned)FEEDER_HARDWARE_REPORT_MS);
     return ESP_OK;
 #endif
 }
@@ -471,7 +463,9 @@ esp_err_t feeder_hardware_tare_scale(void)
         FEEDER_HX711_SAMPLE_COUNT
     );
     if (result == ESP_OK) {
-        ESP_LOGI(TAG, "HX711 tare complete");
+        FEEDER_LOGI(HX711, "去皮完成 | 样本=%u", (unsigned)FEEDER_HX711_SAMPLE_COUNT);
+    } else {
+        FEEDER_LOGW(HX711, "去皮失败 | %s", esp_err_to_name(result));
     }
     return result;
 #else
@@ -482,7 +476,15 @@ esp_err_t feeder_hardware_tare_scale(void)
 esp_err_t feeder_hardware_set_time(const ds1302_datetime_t *time)
 {
 #if FEEDER_ENABLE_DS1302
-    return ds1302_set_time(&rtc_device, time);
+    esp_err_t result = ds1302_set_time(&rtc_device, time);
+    if (result == ESP_OK) {
+        FEEDER_LOGI(DS1302, "设置时间成功 | 20%02u-%02u-%02u %02u:%02u:%02u",
+                    time->year, time->month, time->day,
+                    time->hour, time->minute, time->second);
+    } else {
+        FEEDER_LOGW(DS1302, "设置时间失败 | %s", esp_err_to_name(result));
+    }
+    return result;
 #else
     (void)time;
     return ESP_ERR_NOT_SUPPORTED;
@@ -492,13 +494,23 @@ esp_err_t feeder_hardware_set_time(const ds1302_datetime_t *time)
 esp_err_t feeder_hardware_dispense_once(void)
 {
 #if FEEDER_ENABLE_SERVO
-    return servo_dispense(
+    FEEDER_LOGI(FEED, "开始单次出粮动作 | 开启=%.0f°, 保持=%u ms, 关闭=%.0f°",
+                FEEDER_SERVO_OPEN_ANGLE, (unsigned)FEEDER_SERVO_HOLD_MS,
+                FEEDER_SERVO_CLOSED_ANGLE);
+    esp_err_t result = servo_dispense(
         &feeder_servo,
         FEEDER_SERVO_OPEN_ANGLE,
         FEEDER_SERVO_CLOSED_ANGLE,
         FEEDER_SERVO_HOLD_MS
     );
+    if (result == ESP_OK) {
+        FEEDER_LOGI(FEED, "单次出粮动作完成 | 已发送关闭指令");
+    } else {
+        FEEDER_LOGE(FEED, "单次出粮动作失败 | %s", esp_err_to_name(result));
+    }
+    return result;
 #else
+    FEEDER_LOGW(FEED, "无法执行出粮动作 | 舵机模块已停用");
     return ESP_ERR_NOT_SUPPORTED;
 #endif
 }
